@@ -1,0 +1,273 @@
+---
+title: "White House Visitors - Rework Graphics from Obama Whitehouse Data"
+author: "Earl F Glynn<br>"
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    code_download: true
+    theme: cerulean
+    toc: yes
+    toc_depth:  3
+    toc_float:
+      collapsed:  yes
+      smooth_scroll: yes
+    number_sections: yes
+    code_folding:  show     
+---
+
+Original analysis: `K:\Data-Farm\US-Government\White-House\Visitor-Logs-Obama\2016\2016-12-30`
+
+Original release:  2016-12-30, `https://www.whitehouse.gov/briefing-room/disclosures/visitor-records`
+
+5.99 millon records released.
+
+AFAIK, visitors for the last three months of Obama's 2nd term  were never released, since there is a three month delay in releases.
+
+Trump is not known to have released Obama's final visitor records.
+
+```{r setup, echo = FALSE}
+# http://biostat.mc.vanderbilt.edu/wiki/Main/KnitrHtmlTemplate
+require(Hmisc)    # provides knitrSet and other functions
+knitrSet(lang = 'markdown',   # If using blogdown: knitrSet(lang='blogdown')
+         fig.align = 'left',
+         w = 6.5,
+         h = 4.5,
+         cache = FALSE)
+```
+
+`r hidingTOC(buttonLabel = "Outline")`
+
+```{r startYourEngines, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  comment = NA)
+
+time.1 <- Sys.time()
+```
+
+Next time:
+* Move 
+
+# Setup {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Constants
+
+```{r}
+SOURCE <-  paste0("Source: www.whitehouse.gov/briefing-room/disclosures/visitor-records\n",
+                  "2016-12-30 (Viewable on Wayback Machine)")
+stamp   <- paste0("watchdoglab.substack.com\n", format(time.1, "%Y-%m-%d"))
+```       
+
+
+```{r}
+EXCEL_LIMIT <- 2^20
+```
+
+## Packages
+
+```{r}
+library(tidyverse)
+library(lubridate)   # parse_date_time, mdy_hm
+
+library(downloader)  # download
+library(tools)       # md5sum        
+```
+
+I/O
+
+```{r IO}
+library(readxl)      # read_xlsx
+library(readr)       # write_csv
+library(writexl)     # write_xlsx
+```
+
+Display formatting
+
+```{r Display}
+library(kableExtra)  # kable_styling
+#library(IRdisplay)   # display_html (needed in Jupyter notebooks)
+```         
+Graphics
+
+```{r Graphics}
+library(RColorBrewer)
+library(scales)      # comma, comma_format
+```
+
+## ggplot theme
+
+[ggplot Themes Gallery](https://www.datanovia.com/en/blog/ggplot-themes-gallery/)
+
+```{r ggplotTheme}
+theme_set(theme_minimal() +
+
+            theme(
+                   axis.text             = element_text(size =  9),
+                   axis.title            = element_text(size = 11),
+
+                   plot.caption          = element_text(size =  10,
+                                                        hjust = c(0.0,1.0)),
+                   plot.caption.position = "plot",  
+  
+                   plot.title.position   = "plot",
+                   plot.title            = element_text(size = 14),
+                   plot.subtitle         = element_text(size = 12),
+                   
+                   strip.background      = element_rect(fill = "aliceblue"),
+                   strip.text            = element_text(size = 14),             
+            
+                   panel.grid.minor.x    = element_blank(),
+                   panel.grid.minor.y    = element_blank()   
+                 )
+         )
+
+COLOR_BAR     <- "skyblue"
+COLOR_OUTLINE <- "grey80"
+```                                      
+
+## Helper functions
+
+### Show
+
+```{r Helpers}
+Show <- function(data, caption="", bigMark="",
+                 height = NULL, width = NULL, ...)
+{
+  data                                       |>
+  kable("html", caption=caption,
+        format.args=list(big.mark=bigMark))  |>
+  kable_styling(bootstrap_options=c("striped", "bordered", "condensed"),
+                position="left",
+                full_width=FALSE, ...)       |>
+  scroll_box(height = height, width = width) 
+}
+```       
+
+# Obama Visitors by Month
+
+For now, limit to first two years to compare with Biden's first two years.
+
+Create MonthFirst to be used by ggplot functions.
+
+```{r}
+byMonthWide <- 
+  read_csv("White-House-Visitors-By-Month-Table.csv",
+           show_col_types = FALSE)                    |>
+  filter(APPT_MONTH < "2011-01")                      |>
+  mutate( 
+          Visitors = rowSums(across(POTUS:Tourist)),
+          Month              = paste0(APPT_MONTH, "-01") |> ymd() 
+        )                    |>
+  relocate(Month)
+
+dim(byMonthWide)
+```
+
+```{r}
+byMonthWide |> Show(bigMark = ",", height = "300px")
+```
+
+```{r}
+longFormat <- 
+  byMonthWide             |>
+  select(-APPT_MONTH)     |>
+  pivot_longer(
+                cols      = c("POTUS", "Staff", "Tourist", "Visitors"),
+                names_to  = "Group",
+                values_to = "Visits"
+               )
+
+dim(longFormat)
+```
+Will need to filter for Groups of interest in any plot since there is double counting.
+
+```{r}
+longFormat |> head(10) |> Show()
+```
+
+```{r}
+POTUS_COLOR <- "#619CFF"
+set2 <- brewer.pal( 8, "Set2")  # Brewer qualitative palettes
+set3 <- brewer.pal(12, "Set3")
+```
+
+```{r ObamaPotusStaffTourist, fig.height = 4, fig.width = 8}
+longFormat                                                               |>
+  filter(Group %in% c("POTUS", "Staff", "Tourist"))                      |>
+  mutate(Group = factor(Group, levels = c("Tourist", "Staff", "POTUS"))) |>
+  ggplot(aes(x = Month, y = Visits, fill = Group))  +
+  geom_bar(position = "stack", stat = "identity")   +
+  
+  scale_y_continuous(labels = scales::comma)        +
+  scale_x_date(
+                date_breaks = "1 month",
+                expand = c(0.01, 0), 
+                labels = date_format(c("%b",  # terrible kludge here
+                                       "%b\n%Y",
+                                       rep("%b", 10)))
+              )                                     + 
+  
+  geom_vline(xintercept = c(as.Date("2008-12-17"),
+                            as.Date("2009-12-17")),
+             color = "black", size = 1,
+             linetype = "solid")                    +
+  
+  annotate("text",
+           x = c(as.Date("2009-01-01"),
+                 as.Date("2010-01-01")),
+           y = Inf,
+           label = c("2009", "2010"),
+           color = "blue",
+           hjust = 0, vjust = 1.5,
+           size  = 5)                               +
+  
+   annotate("text",
+           x = as.Date("2009-01-05"),
+           y = 40000,
+           label = paste0("Obama White House Voluntary Disclosure\n", 
+                          "Policy allowed release of visit records\n", 
+                          "starting Sept. 15, 2009.  Only requested\n",
+                          "records before that date were released."),
+           fontface = "italic",
+           hjust = 0, vjust = 1,
+           size  = 2.5)                               +
+  
+  scale_fill_manual(values=c(set3[9],  set3[10], POTUS_COLOR),
+                    labels = c("Tourist", "Staff", "POTUS,\nVPOTUS,\nFLOTUS"))  + 
+  
+  labs(
+        title    = "White House Visitors During Obama Administration (Jan 2009 - Dec 2010)",
+        subtitle = "Visitor Counts by Month for POTUS, Staff, Tourists",
+        x = "Month",
+        y = "Visitors",
+        caption = c(SOURCE, stamp)
+      )                                             +                                   
+  theme(panel.grid.major.x    = element_blank(),
+        legend.position = "right")
+```
+
+
+
+# Epilog {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Session Info
+
+```{r devtoolsSessionInfo}
+devtools::session_info()
+```
+
+</div>
+
+```{r epilogDeltaTime, echo=FALSE}
+time.2 <- Sys.time()
+processingTime <- paste("Processing time:", sprintf("%.1f",
+                        as.numeric(difftime(time.2,
+                                            time.1, units="secs"))), "secs\n")
+```
+
+`r processingTime`
+`r format(time.2, "%Y-%m-%d %H%M")`

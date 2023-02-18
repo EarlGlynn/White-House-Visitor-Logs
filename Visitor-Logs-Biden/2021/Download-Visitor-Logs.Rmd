@@ -1,0 +1,152 @@
+---
+title: "Download White House Visitor Logs"
+author: "Earl F Glynn<br>"
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_depth:  3
+    toc_float:
+      collapsed:  yes
+      smooth_scroll: yes
+    number_sections: yes
+    code_folding:  show
+---
+
+```{r setup, echo = FALSE}
+# http://biostat.mc.vanderbilt.edu/wiki/Main/KnitrHtmlTemplate
+require(Hmisc)    # provides knitrSet and other functions
+knitrSet(lang = 'markdown',   # If using blogdown: knitrSet(lang='blogdown')
+         fig.align = 'left',
+         w = 6.5,
+         h = 4.5,
+         cache = FALSE)
+```
+
+`r hidingTOC(buttonLabel = "Outline")`
+
+```{r startYourEngines, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  comment = NA)
+
+time.1 <- Sys.time()
+```
+
+[Biden-⁠Harris Administration Reinstates Visitor Log Policy 2021-05-07](https://www.whitehouse.gov/briefing-room/disclosures/2021/05/07/biden-harris-administration-reinstates-visitor-log-policy-will-be-first-administration-to-post-records-from-first-full-year-in-office/)
+
+* [Voluntary Disclosure Policy for White House Visitor Logs](https://www.whitehouse.gov/voluntary-disclosure/)
+
+* [Visitor Logs](https://www.whitehouse.gov/disclosures/visitor-logs/)
+
+Links to download `.csv` files are in the section `Visitor Logs by Date`
+
+Visitor Log Records Posting Dates:
+
+
+* [February 2021 Visitor Log Records Posted 2021-06-01](https://www.whitehouse.gov/briefing-room/disclosures/2021/06/01/february-2021-visitor-log-records-posted/)
+
+* [March 2021 Visitor Log Records Posted 2021-06-29](https://www.whitehouse.gov/briefing-room/disclosures/2021/06/29/march-2021-visitor-log-records-posted/)
+
+* [April 2021 Visitor Log Records Posted 2021-07-29](https://www.whitehouse.gov/briefing-room/disclosures/2021/07/29/april-2021-visitor-log-records-posted/)
+
+* [May 2021 Visitor Log Records Posted 2021-08-30](https://www.whitehouse.gov/briefing-room/disclosures/2021/08/30/may-2021-visitor-log-records-posted/)
+
+* [June 2021 Visitor Log Records Posted 2021-10-01](https://www.whitehouse.gov/briefing-room/disclosures/2021/10/01/june-2021-visitor-log-records-posted/)
+
+* [July 2021 Visitor Log Records Posted  2021-11-01](https://www.whitehouse.gov/briefing-room/disclosures/2021/11/01/july-2021-visitor-log-records-posted/)
+
+* [August 2021 Visitor Log Records Posted 2021-12-03 ](https://www.whitehouse.gov/briefing-room/disclosures/2021/12/03/august-2021-visitor-log-records-posted/)
+
+* [September 2021 Visitor Log Records Posted 2022-01-07 ](https://www.whitehouse.gov/briefing-room/disclosures/2022/01/07/september-2021-visitor-log-records-posted/)
+
+* [October 2021 Visitor Log Records Posted 2022-02-04 ](https://www.whitehouse.gov/briefing-room/disclosures/2022/02/04/october-2021-visitor-log-records-posted/)
+
+* [November 2021 Visitor Log Records Posted 2022-03-11 ](https://www.whitehouse.gov/briefing-room/disclosures/2022/03/11/november-2021-visitor-log-records-posted/)
+
+* [December 2021 Visitor Log Records Posted 2022-04-13 ](https://www.whitehouse.gov/briefing-room/disclosures/2022/04/13/december-2021-visitor-log-records-posted/)
+
+# Setup {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Constants
+
+```{r}
+EXCEL_LIMIT <- 2^20
+```
+
+## Packages
+
+```{r}
+library(tidyverse)
+
+library(downloader)  # download
+library(tools)       # md5sum        
+```
+
+Display formatting
+
+```{r Display}
+library(kableExtra)  # kable_styling
+#library(IRdisplay)   # display_html (needed in Jupyter notebooks)
+```         
+
+## Helper functions
+
+```{r Helpers}
+Show <- function(data, caption="", bigMark="",
+                 height = NULL, width = NULL, ...)
+{
+  data                                       %>%
+  kable("html", caption=caption,
+        format.args=list(big.mark=bigMark))  %>%
+  kable_styling(bootstrap_options=c("striped", "bordered", "condensed"),
+                position="left",
+                full_width=FALSE, ...)       %>%
+  scroll_box(height = height, width = width) #  %>%
+# as.character()                             %>%      # Jupyter Only
+# display_html()                                      # Jupyter Only
+}
+```                           
+
+# Download 2021
+
+```{r StartHere}
+FILENAME <- "2021_WAVES-ACCESS-RECORDS.csv"
+URL <- paste0("https://www.whitehouse.gov/wp-content/uploads/2022/04/", FILENAME)
+download(URL, FILENAME, mode="wb", quiet=TRUE)  
+```
+
+```{r}
+file.info(FILENAME)              %>%      # metadata about file(s) 
+  rownames_to_column("Filename") %>%
+  Show(bigMark = ",")
+```
+```{r}
+md5sum(FILENAME)
+```
+
+# Epilog {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Session Info
+
+```{r devtoolsSessionInfo}
+devtools::session_info()
+```
+
+</div>
+
+```{r epilogDeltaTime, echo=FALSE}
+time.2 <- Sys.time()
+processingTime <- paste("Processing time:", sprintf("%.1f",
+                        as.numeric(difftime(time.2,
+                                            time.1, units="secs"))), "secs\n")
+```
+
+`r processingTime`
+`r format(time.2, "%Y-%m-%d %H%M")`
+
