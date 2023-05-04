@@ -1,0 +1,232 @@
+---
+title: "Download White House Visitor Logs for 2023"
+author: "Earl F Glynn<br><small>watchdoglab.substack.com/</small>"
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    code_download: true
+    theme: cerulean
+    toc: yes
+    toc_depth:  3
+    toc_float:
+      collapsed:  yes
+      smooth_scroll: yes
+    number_sections: yes
+    code_folding:  show             
+---
+
+```{r setup, echo = FALSE}
+# http://biostat.mc.vanderbilt.edu/wiki/Main/KnitrHtmlTemplate
+require(Hmisc)    # provides knitrSet and other functions
+knitrSet(lang = 'markdown',   # If using blogdown: knitrSet(lang='blogdown')
+         fig.align = 'left',
+         w = 6.5,
+         h = 4.5,
+         cache = FALSE)
+```
+
+`r hidingTOC(buttonLabel = "Outline")`
+
+```{r startYourEngines, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  comment = NA)
+
+time.1 <- Sys.time()
+```
+
+[Biden-⁠Harris Administration Reinstates Visitor Log Policy 2021-05-07](https://www.whitehouse.gov/briefing-room/disclosures/2021/05/07/biden-harris-administration-reinstates-visitor-log-policy-will-be-first-administration-to-post-records-from-first-full-year-in-office/)
+
+* [Voluntary Disclosure Policy for White House Visitor Logs](https://www.whitehouse.gov/voluntary-disclosure/)
+
+* [Visitor Logs](https://www.whitehouse.gov/disclosures/visitor-logs/)
+
+Links to download `.csv` files are in the section `Visitor Logs by Date`
+
+Visitor Log Records Posting Dates from [Briefing Room](https://www.whitehouse.gov/briefing-room/):
+
+* See file `Briefing-Room.docx`
+
+* []()
+
+* [January 2023 Visitor Log Records Posted, 2023-04-30](https://www.whitehouse.gov/briefing-room/disclosures/2023/04/30/january-2023-visitor-log-records-posted/)
+
+# Setup {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Constants
+
+```{r}
+EXCEL_LIMIT <- 2^20
+```
+
+## Packages
+
+```{r Packages}
+library(tidyverse)
+```
+
+Display formatting
+
+```{r DisplayFormat}
+library(kableExtra)  # kable_styling
+#library(IRdisplay)   # display_html (needed in Jupyter notebooks)
+```
+
+I/O
+
+```{r IO}
+library(readxl)      # read_xlsx
+library(readr)       # write_csv
+library(writexl)     # write_xlsx
+```                                          
+
+```{r}
+library(downloader)  # download
+library(tools)       # md5sum        
+```
+
+Display formatting
+
+```{r Display}
+library(kableExtra)  # kable_styling
+#library(IRdisplay)   # display_html (needed in Jupyter notebooks)
+```         
+
+## Helper functions
+
+```{r Helpers}
+Show <- function(data, caption="", bigMark="",
+                 height = NULL, width = NULL, ...)
+{
+  data                                       |>
+  kable("html", caption=caption,
+        format.args=list(big.mark=bigMark))  |>
+  kable_styling(bootstrap_options=c("striped", "bordered", "condensed"),
+                position="left",
+                full_width=FALSE, ...)       |>
+  scroll_box(height = height, width = width) #  |>
+# as.character()                             |>      # Jupyter Only
+# display_html()                                     # Jupyter Only
+}
+```                           
+
+# Download Month Files in 2022
+
+* https://www.whitehouse.gov/ | Disclosures
+
+* https://www.whitehouse.gov/disclosures/ | Vistor Logs
+
+* https://www.whitehouse.gov/disclosures/visitor-logs/ 
+
+Bureaucrats can't use a simple pattern ... 
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/05/2022.01_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/05/2022.02_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/07/2022.03_WAVES-ACCESS-RECORDS-.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/08/2022.04_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/08/2022.05-WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/10/2022.06_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/10/2022.07_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/11/2022.08_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2022/12/2022.09_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2023/01/2022.10_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2023/03/2022.12_WAVES-ACCESS-RECORDS.csv
+
+* https://www.whitehouse.gov/wp-content/uploads/2023/04/2023.01_WAVES-ACCESS-RECORDS.csv
+
+Notes:
+
+* extra "-" at end of filename in March 2022.
+
+* "-" not "_" in filename in May 2022.
+
+```{r DownloadFunction}
+DownloadMonth <- function(MonthPath, MonthFilename)
+{
+  BASE_URL <- "https://www.whitehouse.gov/wp-content/uploads/"
+  URL      <- paste0(BASE_URL, MonthPath, MonthFilename)
+  download(URL, MonthFilename, mode="wb", quiet=TRUE)  
+}
+```
+
+```
+{r}
+DownloadMonth("2022/05/", "2022.01_WAVES-ACCESS-RECORDS.csv")  # Jan 22
+DownloadMonth("2022/05/", "2022.02_WAVES-ACCESS-RECORDS.csv")  # Feb 22
+DownloadMonth("2022/07/", "2022.03_WAVES-ACCESS-RECORDS-.csv") # Mar 22   extra "-"
+DownloadMonth("2022/08/", "2022.04_WAVES-ACCESS-RECORDS.csv")  # Apr 22
+DownloadMonth("2022/08/", "2022.05-WAVES-ACCESS-RECORDS.csv")  # May 22   "-" not "_" in name
+DownloadMonth("2022/10/", "2022.06_WAVES-ACCESS-RECORDS.csv")  # Jun 22
+DownloadMonth("2022/10/", "2022.07_WAVES-ACCESS-RECORDS.csv")  # Jul 22
+DownloadMonth("2022/11/", "2022.08_WAVES-ACCESS-RECORDS.csv")  # Aug 22
+DownloadMonth("2022/12/", "2022.09_WAVES-ACCESS-RECORDS.csv")  # Sep 22
+DownloadMonth("2023/01/", "2022.10_WAVES-ACCESS-RECORDS.csv")  # Oct 22
+DownloadMonth("2023/02/", "2022.11_WAVES-ACCESS-RECORDS.csv")  # Nov 22
+DownloadMonth("2023/03/", "2022.12_WAVES-ACCESS-RECORDS.csv")  # Dec 22
+```
+
+```{r}
+DownloadMonth("2023/04/", "2023.01_WAVES-ACCESS-RECORDS.csv") # Jan 23
+```
+
+Modify `filenamePattern` to accommodate March 22 with the extra dash
+
+```{r}
+filenamePattern <- "^2023\\.[0-9]{2}.WAVES-ACCESS-RECORDS"
+filenames       <- dir(pattern = filenamePattern)
+
+metaInfoFilenames <- 
+  file.info(filenames)           |>      # metadata about file(s) 
+  rownames_to_column("Filename") |>
+  select(-isdir, -mode, -exe)
+```
+
+```{r}
+metaInfoFilenames$md5sum <- md5sum(filenames) 
+```
+
+```{r}
+metaInfoFilenames |> Show()
+```
+
+```{r}
+stamp <- format(time.1, "%Y-%m-%d")
+write_xlsx(metaInfoFilenames, 
+           paste0("White-House-Visitor-Logs-2023-", stamp, ".xlsx"))
+```
+
+
+# Epilog {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Session Info
+
+```{r devtoolsSessionInfo}
+devtools::session_info()
+```
+
+</div>
+
+```{r epilogDeltaTime, echo=FALSE}
+time.2 <- Sys.time()
+processingTime <- paste("Processing time:", sprintf("%.1f",
+                        as.numeric(difftime(time.2,
+                                            time.1, units="secs"))), "secs\n")
+```
+
+`r processingTime`
+`r format(time.2, "%Y-%m-%d %H%M")`
+
