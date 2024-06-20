@@ -1,0 +1,1116 @@
+---
+title: "White House Visitors - Explorations - By Day for Latest Month"
+author: "Earl F Glynn<br>"
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    code_download: true
+    theme: cerulean
+    toc: yes
+    toc_depth:  3
+    toc_float:
+      collapsed:  yes
+      smooth_scroll: yes
+    number_sections: yes
+    code_folding:  show     
+---
+
+Also see `Counts` directory created by script `1-WhiteHouse-Visitors-Processing.Rmd` with frequency counts of values of fields.
+
+```{r setup, echo = FALSE}
+# http://biostat.mc.vanderbilt.edu/wiki/Main/KnitrHtmlTemplate
+require(Hmisc)    # provides knitrSet and other functions
+knitrSet(lang = 'markdown',   # If using blogdown: knitrSet(lang='blogdown')
+         fig.align = 'left',
+         w = 6.5,
+         h = 4.5,
+         cache = FALSE)
+```
+
+`r hidingTOC(buttonLabel = "Outline")`
+
+```{r startYourEngines, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  comment = NA)
+
+time.1 <- Sys.time()
+```
+
+# Setup {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Constants
+
+```{r}
+DATA_RELEASE  <- "2024-06-07"                                                              ##### (1/3)
+```
+
+```{r}
+SOURCE <- "Source: https://www.whitehouse.gov/disclosures/visitor-logs/\n"  
+stamp  <- paste0("watchdoglab.substack.com\n", format(time.1, "%Y-%m-%d"))
+```       
+
+
+```{r}
+EXCEL_LIMIT <- 2^20
+```
+
+## Packages
+
+```{r}
+library(tidyverse)
+library(lubridate)   # parse_date_time, mdy_hm
+
+library(downloader)  # download
+library(tools)       # md5sum        
+```
+
+I/O
+
+```{r IO}
+library(readxl)      # read_xlsx
+library(readr)       # write_csv
+library(writexl)     # write_xlsx
+```
+
+Display formatting
+
+```{r Display}
+library(kableExtra)  # kable_styling
+#library(IRdisplay)   # display_html (needed in Jupyter notebooks)
+```         
+Graphics
+
+```{r Graphics}
+library(RColorBrewer)
+library(scales)      # comma, comma_format
+```
+
+## ggplot theme
+
+[ggplot Themes Gallery](https://www.datanovia.com/en/blog/ggplot-themes-gallery/)
+
+```{r ggplotTheme}
+theme_set(theme_minimal() +
+
+            theme(
+                   axis.text             = element_text(size = 10),
+                   axis.title            = element_text(size = 12),
+
+                   plot.caption          = element_text(size =  10,
+                                                        hjust = c(0.0,1.0)),
+                   plot.caption.position = "plot",  
+  
+                   plot.title.position   = "plot",
+                   plot.title            = element_text(size = 14),
+                   plot.subtitle         = element_text(size = 12),
+                   
+                   strip.background      = element_rect(fill = "aliceblue"),
+                   strip.text            = element_text(size = 14),             
+            
+                   panel.grid.minor.x    = element_blank(),
+                   panel.grid.minor.y    = element_blank()   
+                 )
+         )
+
+COLOR_BAR     <- "skyblue"
+COLOR_OUTLINE <- "grey80"
+```                                      
+
+## Helper functions
+
+### Show
+
+```{r Helpers}
+Show <- function(data, caption="", bigMark="",
+                 height = NULL, width = NULL, ...)
+{
+  data                                       |>
+  kable("html", caption=caption,
+        format.args=list(big.mark=bigMark))  |>
+  kable_styling(bootstrap_options=c("striped", "bordered", "condensed"),
+                position="left",
+                full_width=FALSE, ...)       |>
+  scroll_box(height = height, width = width) 
+}
+```       
+
+# Read White House Visitor Data
+
+## All Data
+
+Combined from all reports
+
+```{r}
+wh <- 
+  read_csv(paste0("White-House-Visitor-Log-Data-",
+                  DATA_RELEASE,
+                  ".csv"),
+           guess_max = EXCEL_LIMIT,
+           show_col_types = FALSE)   |>
+  select(-`Terminal Suffix`)         |>       # identical to `Last Updated By`
+  mutate(GROUP = factor(GROUP,                # Define order for groups
+                        levels = c("POTUS", "VPOTUS", "FLOTUS",
+                                   "Staff", "Tourist")))
+    
+dim(wh)
+```
+
+## Counts by Month
+
+```{r}
+monthCounts <-
+  wh |> 
+    filter(!is.na(RELEASEDATE)) |>  # ignore two records with missing value
+    group_by(RELEASEDATE) %>%
+    count()
+
+monthCounts |> Show(height = "200px")
+```
+
+Normally will want the most recent month, but the filter here could be changed to pick any month.
+
+```{r}
+targetRelease <- monthCounts |> select(RELEASEDATE) |> tail(1) |> pull()        ##### 2/3
+targetRelease 
+```
+From filenames
+
+Normally three months back
+
+```{r}
+targetMonth <-  targetRelease %m-% months(3) |> str_sub(1, 7)                 
+targetMonth
+```
+```{r}
+targetMonthName <- format(targetRelease %m-% months(3), "%B %Y")
+targetMonthName
+```
+```{r}
+targetMonth <- "2024-02"               ## Override it release date delay into next month
+targetMonthName <- "February 2024"     ## so day is from four months back
+```
+
+```{r}
+wh <- 
+  wh  |>
+  filter(RELEASEDATE == targetRelease)
+
+dim(wh)
+```
+
+# Define Events
+
+Unique events defined by `Event`
+
+```{r}
+events <- 
+  wh  |>
+  select(GROUP, APPT_START_DATE, 
+         Event, LOCATION, `Total People`)                    |>
+  unique()                                                   |>
+  mutate(              # YYYY-MM-DD yy:mm:ss
+          Year       = substr(APPT_START_DATE,  1,  4) |>
+                       as.numeric(),
+          Month      = substr(APPT_START_DATE,  6,  7) |>
+                       as.numeric(),                   
+          Day        = substr(APPT_START_DATE,  9, 10) |>
+                       as.numeric(),   
+          Hour       = substr(APPT_START_DATE, 12, 13) |>
+                       as.numeric()
+        ) 
+
+dim(events)
+```
+
+```{r}
+length(unique(wh$Event))
+```
+
+```{r}
+events |> tail(3) |> Show()
+```
+
+```{r}
+write_xlsx(events, 
+           paste0("Target-", targetMonth, "-",
+                  "White-House-Events-", 
+                  DATA_RELEASE, ".xlsx"))
+```
+
+## Events by Group
+
+```{r}
+eventCounts <- table(events$GROUP, useNA = "ifany")
+eventCounts
+```
+```{r}
+eventCountsByGroup <- 
+  events                      |>
+  group_by(`Total People`, 
+           GROUP)             |>
+  summarize(n = n(),
+            .groups = "drop") |> 
+  spread(GROUP, n, fill = 0)  |>
+  mutate(Events = rowSums(across(POTUS:Tourist)))
+
+dim(eventCountsByGroup)
+```
+
+```{r}
+eventCountsByGroup |>
+  Show(bigMark = ",", height = "300px")
+```
+
+```{r}
+write_xlsx(eventCountsByGroup, 
+           paste0("Target-", targetMonth, "-",
+                  "White-House-Events-TotalPeople-by-Group-", 
+                  DATA_RELEASE, ".xlsx"))
+```
+
+## Events By Day
+
+```{r}
+eventCountsByDay <- 
+  events                      |>
+  group_by(Day, GROUP)        |>
+  summarize(n = n(),
+            .groups = "drop") |> 
+  spread(GROUP, n, fill = 0)  |>
+  mutate(Events = rowSums(across(POTUS:Tourist)))
+
+dim(eventCountsByDay)
+```
+
+
+```{r}
+if (!("FLOTUS" %in% colnames(eventCountsByDay)))
+{
+  eventCountsByDay <- 
+    eventCountsByDay   |>
+    mutate(FLOTUS = 0) |>
+    relocate(FLOTUS, .after = VPOTUS)
+}
+```
+
+```{r}
+eventCountsByDay <- 
+  eventCountsByDay |>
+  mutate( 
+          PVF      = POTUS + VPOTUS + FLOTUS
+        )               
+  
+
+dim(eventCountsByDay)
+```
+
+```{r}
+eventCountsByDay |>
+  Show(bigMark = ",", height = "300px")
+```
+
+```{r}
+write_xlsx(eventCountsByDay,
+           paste0("Target-", targetMonth, "-",
+                  "White-House-Events-by-Day-Table-",
+                  DATA_RELEASE, ".xlsx"))
+```
+
+
+```{r}
+longFormat <- 
+  eventCountsByDay        |>
+  pivot_longer(
+                cols      = c("POTUS",  "VPOTUS", "FLOTUS", 
+                              "Staff",  "Tourist",
+                              "Events", "PVF"),
+                names_to  = "Group",
+                values_to = "Events"
+               )
+
+dim(longFormat)
+```
+
+### POTUS-VPOTUS-FLOTUS by Day
+
+Use default blue color for POTUS, but two different sets of qualitative pairs for plots below.
+
+```{r}
+POTUS_COLOR <- "#619CFF"
+set2 <- brewer.pal( 8, "Set2")  # Brewer qualitative palettes
+set3 <- brewer.pal(12, "Set3")
+```
+
+```{r EventsBidenPotusVPotusFlotus, fig.height = 4, fig.width = 8}
+longFormat                                                               |>
+  filter(Group %in% c("POTUS", "VPOTUS", "FLOTUS"))                      |>
+  mutate(Group = factor(Group, levels = c("FLOTUS", "VPOTUS", "POTUS"))) |>
+  ggplot(aes(x = Day, y = Events, fill = Group))        +
+  geom_bar(position = "stack", stat = "identity")       +
+  scale_x_continuous(breaks = head(eventCountsByDay$Day,1) : tail(eventCountsByDay$Day,1) ) +
+  scale_y_continuous(
+                      labels = scales::comma
+                    )                                   +
+                             # FLOTUS    VPOTUS    POTUS
+  scale_fill_manual(values = c(set2[5],  set2[6],  POTUS_COLOR))  +
+
+  labs(
+        title    = paste0("White House Events During Biden Administration in ", targetMonthName),  
+        subtitle = paste0("Event Counts by Day for POTUS, VPOTUS, FLOTUS "),
+        x = "Day of Month", 
+        y = "Events",
+        caption = c(SOURCE, stamp)
+      )                                                 +                                   
+  theme(panel.grid.major.x    = element_blank(),
+        legend.position = "right")
+```
+
+```{r EventsBidenPotusStaffTourist, fig.height = 4, fig.width = 8}
+longFormat                                                             |>
+  filter(Group %in% c("PVF", "Staff", "Tourist"))                      |>
+  mutate(Group = factor(Group, levels = c("Tourist", "Staff", "PVF"))) |>
+  ggplot(aes(x = Day, y = Events, fill = Group))        +
+  geom_bar(position = "stack", stat = "identity")       +
+  
+  scale_y_continuous(labels = scales::comma)            +
+  scale_x_continuous(breaks = head(eventCountsByDay$Day,1) : tail(eventCountsByDay$Day,1) ) +
+ 
+   scale_fill_manual(values=c(set3[9],  set3[10], POTUS_COLOR),
+                    labels = c("Tourist", "Staff", "POTUS,\nVPOTUS,\nFLOTUS"))  + 
+  
+  labs(
+        title    = paste0("White House Events During Biden Administration in ", targetMonthName),  
+        subtitle = "Event Counts by Day for POTUS/VPOTUS/FLOTUS, Staff, Tourists",
+        x = "Day of Month",
+        y = "Events",
+        caption = c(SOURCE, stamp)
+      )                                             +                                   
+  theme(panel.grid.major.x    = element_blank(),
+        legend.position = "right")
+```
+
+### Staff by Day
+
+
+
+# Total People per Event by Number of Events
+
+## All Events
+
+Use outline color black to show the 1 levels, and overlaps.
+
+Don't bother with histograms here, since log-log scale already difficult to interpret.
+
+```{r TargetTotalPeopleAllEvents}
+ggplot(eventCountsByGroup, aes(x = `Total People`, y= Events))  + 
+  geom_bar(stat = "identity", 
+           fill = COLOR_BAR,  color = "black", width = 0.02)    +        
+  scale_x_log10(breaks = c(1:5, 10, 20, 30, 50,
+                           100, 200, 500, 1000, 2000, 5000),
+                labels = scales::comma)                         +
+  scale_y_log10(breaks = c(1, 5, 10, 50, 100, 500,
+                           1000, 5000, 10000, 15000, 20000),
+                labels = scales::comma)                         +
+  labs(
+        title    = "Total People per White House Event",
+        subtitle = paste0("All Visitors, ", comma(nrow(events)), 
+                          " Events in ", targetMonthName),
+        x = "Total People Per Event",
+        y = "Events",
+        caption = c(SOURCE, stamp)
+      )                                                  
+
+```
+
+## POTUS Events
+
+Not sure why, but x-axis scaling is not very dynamic unless filtered to only GROUP of interest.
+
+```{r TargetTotalPeoplePOTUSEvents}
+eventCountsByGroup               |> 
+  select(`Total People`, POTUS)  |>
+  filter(POTUS > 0)              |>
+ggplot(aes(x = `Total People`, y= POTUS))                             + 
+  geom_bar(stat = "identity", 
+           fill = COLOR_BAR,  color = "black", width = 0.025)         +        
+  scale_x_log10(breaks = c(1:5, 10, 20, 30, 50,
+                           100, 200, 500, 1000, 2000, 5000),
+                labels = scales::comma)                               +
+  scale_y_log10(breaks = c(1, 5, 10, 50, 100, 500,
+                           1000, 5000, 10000, 15000, 20000),
+                labels = scales::comma)                               +
+  labs(
+        title    = "Total People per White House Event - POTUS",
+        subtitle = paste0("POTUS (President of the United States) Visitors, ",
+                          comma(sum(eventCountsByGroup$POTUS)), 
+                          " Events in ", targetMonthName),
+        x = "Total People Per Event",
+        y = "Events",
+        caption = c(SOURCE, stamp)
+      )                                        
+```
+
+## VPOTUS Events
+
+```{r TargetTotalPeopleVPOTUSEvents}
+eventCountsByGroup               |> 
+  select(`Total People`, VPOTUS) |>
+  filter(VPOTUS > 0)             |>
+ggplot(aes(x = `Total People`, y= VPOTUS))                            + 
+  geom_bar(stat = "identity", 
+           fill = COLOR_BAR, color = "black", width = 0.05)           +        
+  scale_x_log10(breaks = c(1:5, 10, 20, 30, 50,
+                           100, 150, 300),
+                labels = scales::comma)                               +
+  scale_y_log10(#breaks = c(1, 5, 10, 20, 30, 40),
+                labels = scales::comma)                               +
+  labs(
+        title    = "Total People per White House Event - VPOTUS",
+        subtitle = paste0("VPOTUS (Vice-President of the United States) Visitors, ",
+                          comma(sum(eventCountsByGroup$VPOTUS)), 
+                          " Events in ", targetMonthName),
+        x = "Total People Per Event",
+        y = "Events",
+        caption = c(SOURCE, stamp)
+      )                                        
+```
+
+## FLOTUS Events
+
+```{r TargetTotalPeopleFLOTUSEvents}
+if (eventCounts["FLOTUS"] > 0)
+{
+  eventCountsByGroup                |> 
+    select(`Total People`, FLOTUS)  |>
+    filter(FLOTUS > 0)              |>
+  ggplot(aes(x = `Total People`, y= FLOTUS))                            + 
+    geom_bar(stat = "identity", 
+             fill = COLOR_BAR, color = "black", width = 0.05)           +        
+    scale_x_log10(breaks = c(1:5, 10, 20, 30, 50,
+                             100, 150),
+                  labels = scales::comma)                               +
+    scale_y_log10(# breaks = c(1, 5, 10, 20, 30, 40),
+                  labels = scales::comma)                               +
+    labs(
+          title    = "Total People per White House Event - FLOTUS",
+           subtitle = paste0("FLOTUS (First Lady of the United States) Visitors, ",
+                            comma(sum(eventCountsByGroup$FLOTUS)), 
+                             " Events in ", targetMonthName),
+          x = "Total People Per Event",
+          y = "Events",
+          caption = c(SOURCE, stamp)
+        ) 
+}
+```
+
+## Staff Events
+
+```{r TargetTotalPeopleStaffEvents}
+eventCountsByGroup               |> 
+  select(`Total People`, Staff)  |>
+  filter(Staff > 0)              |>
+ggplot(aes(x = `Total People`, y= Staff))                             + 
+  geom_bar(stat = "identity", 
+           fill = COLOR_BAR,  color = "black", width = 0.025)         +        
+  scale_x_log10(breaks = c(1:5, 10, 20, 30, 50,
+                           100, 250, 500, 750, 1250),
+                labels = scales::comma)                               +
+  scale_y_log10(breaks = c(1, 5, 10, 50, 100, 500,
+                           1000, 5000, 10000, 15000, 20000),
+                labels = scales::comma)                               +
+  labs(
+        title    = "Total People per White House Event - Staff",
+        subtitle = paste0("White House Staff Visitors, ",
+                          comma(sum(eventCountsByGroup$Staff)), 
+                          " Events in ", targetMonthName),
+        x = "Total People Per Event",
+        y = "Events",
+        caption = c(SOURCE, stamp)
+      )                                        
+```
+
+```{r TargetTotalPeopleTouristEvents}
+eventCountsByGroup                 |> 
+  select(`Total People`, Tourist)  |>
+  filter(Tourist > 0)              |>
+ggplot(aes(x = `Total People`, y= Tourist))                           + 
+  geom_bar(stat = "identity", 
+           fill = COLOR_BAR,  color = "black", width = 0.025)         +        
+  scale_x_log10(breaks = c(1:5, 10, 20, 30, 50, 75, 100, 125),
+                labels = scales::comma)                               +
+  scale_y_log10(breaks = c(1, 5, 10, 50, 100, 500,
+                           1000, 2000, 4000, 5000, 7000),
+                labels = scales::comma)                               +
+  labs(
+        title    = "Total People per White House Event - Tourists",
+        subtitle = paste0("White House Tourist Visitors, ",
+                          comma(sum(eventCountsByGroup$Tourist)),
+                          " Events in ", targetMonthName),
+        x = "Total People Per Event",
+        y = "Events",
+        caption = c(SOURCE, stamp)
+      )                                        
+```
+
+# Event Start Date Hour
+
+Next time:  use function for the Hour plots
+
+## Overall
+
+Most of the Hour = 0 values are caused by missing time fields with date-only values.
+
+```{r}
+hourCounts <- 
+  events         |>
+  group_by(Hour) |>
+  count()
+
+nrow(hourCounts)
+```
+```{r}
+sum(hourCounts$n)
+```
+
+Would like to use `coord_polar`for 24-hour clock here but it is fickle or has bugs.
+
+Oddly, must expand left x-limit or first bar is clipped when present -- this as also a problem with `coord_polar`
+
+```{r}
+hourCountsLessMissing <- 
+  hourCounts  |>
+  filter(Hour != 0)
+
+sum(hourCountsLessMissing$n)
+```
+
+```{r TargetEventHourAll}    
+ggplot(hourCountsLessMissing)          +
+  geom_bar(aes(x = Hour, y = n),
+           stat = "identity", 
+           fill = COLOR_BAR,  color = "black")               + 
+  
+  scale_x_continuous(limits = c(0, 23),
+                     breaks = seq(0, 23))                    +
+  scale_y_continuous(labels = scales::comma)                 +
+  
+  geom_text(aes(x = Hour, y = n, label = comma(n)),
+            vjust = -0.5, hjust = 0.5, size = 2, angle = 0) +
+  
+  labs(title = "White House Event Start Time Hour (24-hour clock)",
+       subtitle = paste0(comma(sum(hourCountsLessMissing$n)), " events [",
+                         comma(sum(hourCounts$n) -
+                               sum(hourCountsLessMissing$n)),
+                         " events missing time value] ",
+                         "in ", targetMonthName),
+       x = "Hour of Day", 
+       y = "Events", 
+       caption = c(SOURCE, stamp))                           +
+  theme(panel.grid.major.x    = element_blank())
+```
+
+Unusual Start Times
+
+```{r}
+unusualStart <- 
+  events                        |>
+  filter(Hour < 6 | Hour > 22)  |>
+  select(Event)                 |>
+  inner_join(wh, by = "Event")  |>
+  arrange(Event, APPT_START_DATE)
+
+dim(unusualStart)
+```
+
+```{r}
+write_xlsx(unusualStart,
+           paste0("Unusual-Event-Start-", targetMonth, "-",
+                  DATA_RELEASE, ".xlsx"))
+```
+
+## By Group
+
+```{r}
+hourCountsByGroup <- 
+  events                                         |>
+  group_by(GROUP)                                |>
+  count()
+  
+hourCountsByGroup |> Show(height = "200px")
+```
+
+```{r}
+hourCountsByGroupYear <- 
+  events                                            |>
+  mutate(Year = substr(APPT_START_DATE,  1,  4)  |>
+                as.numeric(),
+         Hour = substr(APPT_START_DATE, 12, 13)  |>
+                as.numeric())                        |>
+  group_by(GROUP, Year)                             |> 
+  count(Hour)
+  
+hourCountsByGroupYear |> Show(height = "200px")
+```
+
+```{r}
+write_xlsx(hourCountsByGroupYear, 
+           paste0("Target-", targetMonth, "-",
+                  "White-House-Event-Start-Hour-by-Group-",
+                  DATA_RELEASE, ".xlsx"))
+```
+
+### POTUS
+
+```{r}
+hourCounts <-
+  events                   |>
+  filter(GROUP == "POTUS") |>
+  group_by(Hour)           |>
+  count()
+
+nrow(hourCounts)
+```
+
+```{r}
+sum(hourCounts$n)
+```
+
+```{r}
+hourCountsLessMissing <-
+  hourCounts  |>
+  filter(Hour != 0)
+
+sum(hourCountsLessMissing$n)
+```                                     
+
+```{r TargetEventHourPotus}
+ggplot(hourCountsLessMissing)          +
+  geom_bar(aes(x = Hour, y = n),
+           stat = "identity",
+           fill = COLOR_BAR,  color = "black")               +
+  
+   scale_x_continuous(limits = c(0, 23),
+                     breaks = seq(0, 23))                    +
+  scale_y_continuous(labels = scales::comma)                 +
+
+  geom_text(aes(x = Hour, y = n, label = comma(n)),
+            vjust = -0.5, hjust = 0.5, size = 2, angle = 0) +
+
+  labs(title = "White House Event Start Time Hour - POTUS",
+       subtitle = paste0(comma(sum(hourCountsLessMissing$n)), " POTUS events [",
+                         comma(sum(hourCounts$n) -
+                               sum(hourCountsLessMissing$n)),
+                         " events missing time value] ",
+                         "in Month ", targetMonthName),
+       x = "Hour of Day",
+       y = "Events",
+       caption = c(SOURCE, stamp))                           +
+  theme(panel.grid.major.x    = element_blank())
+```                                                                 
+
+### VPOTUS
+
+```{r}
+hourCounts <-
+  events                    |>
+  filter(GROUP == "VPOTUS") |>
+  group_by(Hour)            |>
+  count()
+
+nrow(hourCounts)
+```
+
+```{r}
+sum(hourCounts$n)
+```
+
+```{r}
+hourCountsLessMissing <-
+  hourCounts  |>
+  filter(Hour != 0)
+
+sum(hourCountsLessMissing$n)
+```
+
+```{r TargetEventHourVPotus}
+ggplot(hourCountsLessMissing)          +
+  geom_bar(aes(x = Hour, y = n),
+           stat = "identity",
+           fill = COLOR_BAR,  color = "black")               +
+  
+  scale_x_continuous(limits = c(0, 23),
+                     breaks = seq(0, 23))                    +
+  scale_y_continuous(labels = scales::comma)                 +
+
+  geom_text(aes(x = Hour, y = n, label = comma(n)),
+            vjust = -0.5, hjust = 0.5, size = 2, angle = 0) +
+
+  labs(title = "White House Event Start Time Hour - VPOTUS",
+       subtitle = paste0(comma(sum(hourCountsLessMissing$n)), " VPOTUS events [",
+                         comma(sum(hourCounts$n) -
+                               sum(hourCountsLessMissing$n)),
+                         " events missing time value] ",
+                         "in ", targetMonthName),
+       x = "Hour of Day",
+       y = "Events",
+       caption = c(SOURCE, stamp))                           +
+  theme(panel.grid.major.x    = element_blank())
+```                                                                               
+
+### FLOTUS
+
+```{r}
+hourCounts <-
+  events                    |>
+  filter(GROUP == "FLOTUS") |>
+  group_by(Hour)            |>
+  count()
+
+nrow(hourCounts)
+```
+
+```{r}
+sum(hourCounts$n)
+```
+
+```{r}
+hourCountsLessMissing <-
+  hourCounts  |>
+  filter(Hour != 0)
+
+sum(hourCountsLessMissing$n)
+```
+
+```{r TargetEventHourFlotus}
+if (nrow(hourCounts) > 0)
+{
+  ggplot(hourCountsLessMissing)          +
+    geom_bar(aes(x = Hour, y = n),
+             stat = "identity",
+             fill = COLOR_BAR,  color = "black")               +
+    
+    scale_x_continuous(limits = c(0, 23),
+                       breaks = seq(0, 23))                    +
+    scale_y_continuous(labels = scales::comma)                 +
+  
+    geom_text(aes(x = Hour, y = n, label = comma(n)),
+              vjust = -0.5, hjust = 0.5, size = 2, angle = 0) +
+  
+    labs(title = "White House Event Start Time Hour - FLOTUS",
+         subtitle = paste0(comma(sum(hourCountsLessMissing$n)), " FLOTUS events [",
+                           comma(sum(hourCounts$n) -
+                                 sum(hourCountsLessMissing$n)),
+                           " events missing time value] ",
+                           "in ", targetMonthName),
+         x = "Hour of Day",
+         y = "Events",
+         caption = c(SOURCE, stamp))                           +
+    theme(panel.grid.major.x    = element_blank())
+}
+```                                                               
+
+### Staff
+
+```{r}
+hourCounts <-
+  events                   |>
+  filter(GROUP == "Staff") |>
+  group_by(Hour)           |>
+  count()
+
+nrow(hourCounts)
+```
+
+```{r}
+sum(hourCounts$n)
+```
+
+```{r}
+hourCountsLessMissing <-
+  hourCounts  |>
+  filter(Hour != 0)
+
+sum(hourCountsLessMissing$n)
+```
+
+```{r TargetEventHourStaff}
+ggplot(hourCountsLessMissing)          +
+  geom_bar(aes(x = Hour, y = n),
+           stat = "identity",
+           fill = COLOR_BAR,  color = "black")               +
+  
+  scale_x_continuous(limits = c(0, 23),
+                     breaks = seq(0, 23))                    +
+  scale_y_continuous(labels = scales::comma)                 +
+
+  geom_text(aes(x = Hour, y = n, label = comma(n)),
+            vjust = -0.5, hjust = 0.5, size = 2, angle = 0) +
+
+  labs(title = "White House Event Start Time Hour - Staff",
+       subtitle = paste0(comma(sum(hourCountsLessMissing$n)), " Staff events [",
+                         comma(sum(hourCounts$n) -
+                               sum(hourCountsLessMissing$n)),
+                         " events missing time value] ",
+                         "in ", targetMonthName),
+       x = "Hour of Day",
+       y = "Events",
+       caption = c(SOURCE, stamp))                           +
+  theme(panel.grid.major.x    = element_blank())
+```                                                              
+
+### Tourist
+
+```{r}
+hourCounts <-
+  events                     |>
+  filter(GROUP == "Tourist") |>
+  group_by(Hour)             |>
+  count()
+
+nrow(hourCounts)
+```
+
+```{r}
+sum(hourCounts$n)
+```
+
+```{r}
+hourCountsLessMissing <-
+  hourCounts  |>
+  filter(Hour != 0)
+
+sum(hourCountsLessMissing$n)
+```
+
+```{r TargetEventHourTourist}
+ggplot(hourCountsLessMissing)          +
+  geom_bar(aes(x = Hour, y = n),
+           stat = "identity",
+           fill = COLOR_BAR,  color = "black")               +
+  
+  scale_x_continuous(limits = c(0, 23),
+                     breaks = seq(0, 23))                    +
+  scale_y_continuous(labels = scales::comma)                 +
+
+  geom_text(aes(x = Hour, y = n, label = comma(n)),
+            vjust = -0.5, hjust = 0.5, size = 2, angle = 0) +
+
+  labs(title = "White House Event Start Time Hour - Tourist",
+       subtitle = paste0(comma(sum(hourCountsLessMissing$n)), " Tourist events [",
+                         comma(sum(hourCounts$n) -
+                               sum(hourCountsLessMissing$n)),
+                         " events missing time value] ",
+                         " in ", targetMonthName),
+       x = "Hour of Day",
+       y = "Events",
+       caption = c(SOURCE, stamp))                           +
+  theme(panel.grid.major.x    = element_blank())
+```                                                                
+
+### After-Hour Tourists
+
+```{r}
+afterHourTouristEvents <- 
+  events                     |>
+  filter(GROUP == "Tourist",
+         Hour  >= 15)        |>
+  select(Event)              |>
+  unique()
+
+nrow(afterHourTouristEvents)
+```
+
+```{r}
+afterHourTourists <- 
+  wh   |>
+  inner_join(afterHourTouristEvents, by = "Event") %>%
+  arrange(APPT_START_DATE, VISITEE, VISITOR)
+
+nrow(afterHourTourists)
+```
+
+```{r}
+if (nrow(afterHourTourists) > 0)
+{
+  write_xlsx(afterHourTourists,
+             paste0("Target-", targetMonth, "-",
+                    "White-House-After-Hours-Tourists-",
+                    targetMonth, "-",
+                    DATA_RELEASE, ".xlsx"))
+}
+```
+
+## Hour by Month
+
+```{r}
+hourCountsByGroupYearMonth <-
+  events                                          |>
+  mutate(Year  = substr(APPT_START_DATE,  1,  4),
+         Month = substr(APPT_START_DATE,  6,  7),
+         Hour  = substr(APPT_START_DATE, 12, 13)) |>
+  group_by(GROUP, Year, Month, Hour)              |>
+  count()                                         |>
+  arrange(Year, Month, Hour, GROUP)           
+
+hourCountsByGroupYearMonth |> Show(height = "200px")
+```
+
+```{r}
+write_xlsx(hourCountsByGroupYearMonth,
+           paste0("Target-", targetMonth, "-",
+                  "White-House-Event-Start-Hour-by-Group-Month-",
+                  DATA_RELEASE, ".xlsx"))
+```                                                   
+
+# Visitors by Day
+
+```{r}
+byDay <- 
+  wh                            |>
+  mutate(APPT_DAY = substr(APPT_START_DATE,  1, 10))  |>   # YYYY-MM-DD
+  
+  group_by(APPT_DAY, GROUP)     |>
+  count()                       |>
+  ungroup()                     |>
+  
+  spread(GROUP, n, fill = 0) 
+```
+
+```{r}
+if (!("FLOTUS" %in% colnames(byDay)))
+{
+  byDay <- 
+    byDay |>
+    mutate(FLOTUS = 0) |>
+    relocate(FLOTUS, .after = VPOTUS)
+}
+```
+
+
+```{r}
+byDay <- 
+  byDay |>
+  mutate( 
+          Visitors           = rowSums(across(POTUS:Tourist)),
+          PVF                = POTUS + VPOTUS + FLOTUS,
+          Day                = mday(APPT_DAY)
+        )                    |>
+  relocate(Day)
+
+dim(byDay)
+```
+
+```{r}
+byDay |> Show(bigMark = ",", height = "300px")
+```
+
+```{r}
+write_xlsx(byDay,
+           paste0("Target-", targetMonth, "-",
+                  "White-House-Visitors-by-Day-Table-",
+                  DATA_RELEASE, ".xlsx"))
+```            
+
+```{r}
+longFormat <- 
+  byDay                   |>
+  pivot_longer(
+                cols      = c("POTUS", "VPOTUS", "FLOTUS", 
+                              "Staff", "Tourist",
+                              "Visitors", "PVF"),
+                names_to  = "Group",
+                values_to = "Visits"
+               )
+
+dim(longFormat)
+```
+Will need to filter for Groups of interest in any plot since there is double counting.
+
+```{r}
+longFormat |> head(10) |> Show()
+```
+
+## PVL = POTUS + VPOTUS + FLOTUS
+
+Use default blue color for POTUS, but two different sets of qualitative pairs for plots below.
+
+```{r}
+POTUS_COLOR <- "#619CFF"
+set2 <- brewer.pal( 8, "Set2")  # Brewer qualitative palettes
+set3 <- brewer.pal(12, "Set3")
+```
+
+```{r VisitorsBidenPotusVPotusFlotus, fig.height = 4, fig.width = 8}
+longFormat                                                               |>
+  filter(Group %in% c("POTUS", "VPOTUS", "FLOTUS"))                      |>
+  mutate(Group = factor(Group, levels = c("FLOTUS", "VPOTUS", "POTUS"))) |>
+  ggplot(aes(x = Day, y = Visits, fill = Group))        +
+  geom_bar(position = "stack", stat = "identity")       +
+  scale_x_continuous(breaks = head(eventCountsByDay$Day,1) : tail(eventCountsByDay$Day,1) ) +
+  scale_y_continuous(
+                      labels = scales::comma
+                    )                                   +
+                             # FLOTUS    VPOTUS    POTUS
+  scale_fill_manual(values = c(set2[5],  set2[6],  POTUS_COLOR))  +
+
+  labs(
+        title    = paste0("White House Visitors During Biden Administration in ", targetMonthName),  
+        subtitle = paste0("Visitor Counts by Day for POTUS, VPOTUS, FLOTUS "),
+        x = "Day of Month", 
+        y = "Visitors",
+        caption = c(SOURCE, stamp)
+      )                                                 +                                   
+  theme(panel.grid.major.x    = element_blank(),
+        legend.position = "right")
+```
+
+```{r VisitorsBidenPotusStaffTourist, fig.height = 4, fig.width = 8}
+longFormat                                                             |>
+  filter(Group %in% c("PVF", "Staff", "Tourist"))                      |>
+  mutate(Group = factor(Group, levels = c("Tourist", "Staff", "PVF"))) |>
+  ggplot(aes(x = Day, y = Visits, fill = Group))        +
+  geom_bar(position = "stack", stat = "identity")       +
+  
+  scale_y_continuous(labels = scales::comma)            +
+  scale_x_continuous(breaks = head(eventCountsByDay$Day,1) : tail(eventCountsByDay$Day,1) ) +
+ 
+  scale_fill_manual(values=c(set3[9],  set3[10], POTUS_COLOR),
+                    labels = c("Tourist", "Staff", "POTUS,\nVPOTUS,\nFLOTUS"))  + 
+  
+  labs(
+        title    = paste0("White House Visitors During Biden Administration in ", targetMonthName),  
+        subtitle = "Visitor Counts by Day for POTUS/VPOTUS/FLOTUS, Staff, Tourists",
+        x = "Day of Month",
+        y = "Visitors",
+        caption = c(SOURCE, stamp)
+      )                                             +                                   
+  theme(panel.grid.major.x    = element_blank(),
+        legend.position = "right")
+```
+
+
+
+# Epilog {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Session Info
+
+```{r devtoolsSessionInfo}
+devtools::session_info()
+```
+
+</div>
+
+```{r epilogDeltaTime, echo=FALSE}
+time.2 <- Sys.time()
+processingTime <- paste("Processing time:", sprintf("%.1f",
+                        as.numeric(difftime(time.2,
+                                            time.1, units="secs"))), "secs\n")
+```
+
+`r processingTime`
+`r format(time.2, "%Y-%m-%d %H%M")`
